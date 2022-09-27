@@ -671,6 +671,8 @@ static esp_netif_t *s_example_esp_netif = NULL;
 #define MAX_IP6_ADDRS_PER_NETIF (5)
 #define NR_OF_IP_ADDRESSES_TO_WAIT_FOR (s_active_interfaces)
 
+htmlPage01[] = {"  "};
+
 /* Tipos de enderecos IPv6 a serem exibidos em eventos IPv6. */
 static esp_ip6_addr_t s_ipv6_addr;
 
