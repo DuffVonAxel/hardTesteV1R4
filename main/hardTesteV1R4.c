@@ -4,10 +4,18 @@
 #include "freertos/task.h"														// Acesso as prioridades da TASK.
 #include "driver/gpio.h"														// Acesso ao uso das GPIOs.
 #include "esp_log.h"															// Acesso ao uso dos LOGs.
-#include "rom/ets_sys.h"
+#include <esp_http_server.h>    												// => httpd_uri_t
+#include "rom/ets_sys.h"														// Acesso a escala de tempo em micro segundos.
+#include <esp_event.h>          												// => esp_event_base_t
+#include <nvs_flash.h>          												// => nvs_flash_init
+#include <sys/param.h>          												// => MIN()
+#include <esp_event.h>          												// => esp_event_base_t
+#include "esp_tls_crypto.h"														// => esp_crypto_base64_encode
+#include "esp_netif.h"                                                          // 
+#include "esp_wifi.h"                                                           // 
 
 /* RTOS */
-#define CONFIG_FREERTOS_HZ 100													// Definicao da Espressif.
+#define CONFIG_FREERTOS_HZ 100													// Definicao da Espressif. Escala de tempo base (vTaskDelay).
 
 /* KEYPAD */
 #define ___keyCK	4							                                // Seleciona o pino de 'clock' para o registrador.
@@ -51,6 +59,65 @@
 /* DHT 11/22 */
 #define ___dhtPin	23															// Seleciona o pino de acesso ao DHT 11/22.
 
+/* WiFi */
+static const char *TAG = "Wifi_Fred";
+// Configuracao de conexao
+#define CONFIG_EXAMPLE_GPIO_RANGE_MIN				0
+#define CONFIG_EXAMPLE_GPIO_RANGE_MAX				33
+#define CONFIG_EXAMPLE_CONNECT_WIFI												// Sim
+#define CONFIG_EXAMPLE_WIFI_SSID					"IoT_AP"
+#define CONFIG_EXAMPLE_WIFI_PASSWORD				"12345678"
+#define CONFIG_EXAMPLE_WIFI_SCAN_METHOD_ALL_CHANNEL	
+#define CONFIG_EXAMPLE_WIFI_CONNECT_AP_BY_SIGNAL								// Sim
+#define CONFIG_EXAMPLE_CONNECT_IPV6												// Sim
+#define CONFIG_EXAMPLE_CONNECT_IPV6_PREF_LOCAL_LINK								// Sim
+#define CONFIG_EXAMPLE_BASIC_AUTH												// Sim
+#define CONFIG_EXAMPLE_BASIC_AUTH_USERNAME			"ESP32"						// Formulario de acesso: Ususario
+#define CONFIG_EXAMPLE_BASIC_AUTH_PASSWORD			"ESPWebServer"				// Formulario de acesso: Senha
+#define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_ALL_CHANNEL_SCAN       // 
+// #define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_FAST_SCAN
+#define EXAMPLE_DO_CONNECT
+// Limites de busca
+#define CONFIG_EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD		-127
+// #define CONFIG_EXAMPLE_WIFI_AUTH_OPEN											// 
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WEP
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WPA_PSK
+#define CONFIG_EXAMPLE_WIFI_AUTH_WPA2_PSK
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WPA_WPA2_PSK
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WPA2_ENTERPRISE
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WPA3_PSK
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WPA2_WPA3_PSK
+// #define CONFIG_EXAMPLE_WIFI_AUTH_WAPI_PSK
+#define EXAMPLE_CONNECT_PREFERRED_IPV6_TYPE         ESP_IP6_ADDR_IS_LINK_LOCAL
+// #define EXAMPLE_CONNECT_PREFERRED_IPV6_TYPE         ESP_IP6_ADDR_IS_GLOBAL
+// #define EXAMPLE_CONNECT_PREFERRED_IPV6_TYPE         ESP_IP6_ADDR_IS_SITE_LOCAL
+// #define EXAMPLE_CONNECT_PREFERRED_IPV6_TYPE         ESP_IP6_ADDR_IS_UNIQUE_LOCAL
+#define EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD         WIFI_CONNECT_AP_BY_SIGNAL
+// #define EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD         WIFI_CONNECT_AP_BY_SECURITY
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_OPEN
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WEP
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA_PSK
+#define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA2_PSK
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA_WPA2_PSK
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA2_ENTERPRISE
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA3_PSK
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WPA2_WPA3_PSK
+// #define EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD       WIFI_AUTH_WAPI_PSK
+
+// Pelo SDKCONFIG
+#define CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM       10
+#define CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM      32
+#define CONFIG_ESP32_WIFI_TX_BUFFER_TYPE             1
+#define CONFIG_ESP32_WIFI_DYNAMIC_TX_BUFFER_NUM      32
+#define CONFIG_ESP32_WIFI_TX_BA_WIN                  6
+#define CONFIG_ESP32_WIFI_RX_BA_WIN                  6            
+#define CONFIG_ESP32_WIFI_SOFTAP_BEACON_MAX_LEN      752
+#define CONFIG_ESP32_WIFI_MGMT_SBUF_NUM              32
+
+#define MAX_HTTP_RECV_BUFFER 						512
+#define MAX_HTTP_OUTPUT_BUFFER 						2048
+
+/* Bloco Inicio: Teclado */
 unsigned char tecTecNew,tecTecOld;				                                // Var. global para rotina anti-repeticao.
 
 unsigned char __keyScan(void)					                                // Le as linhas.
@@ -151,7 +218,9 @@ void tecladoIniciar(void)							                            // Rotina para inici
 	gpio_set_level(___keyLD,0);						// Limpa o pino.
 	gpio_set_level(___keyRD,0);						// Limpa o pino.
 }
+/* Bloco Fim: Teclado */
 
+/* Bloco Inicio: LCD */
 void __lcdCls(void)										                        // Limpa o registrador.
 {
 	unsigned char __tmp0;									                    // Var local temporaria.
@@ -229,7 +298,9 @@ void lcdString(char *letras, unsigned char linha, unsigned char coluna)	        
 		letras++;											                    // ...avanca para o proximo caracter.
 	}
 }
+/* Bloco Fim: LCD */
 
+/* Bloco Inicio: GPIOs */
 void gpoIniciar(void)															// Inicializa o hardware da saida.
 {
     gpio_reset_pin(___gpoCK);													// Limpa configuracoes anteriores.
@@ -302,6 +373,7 @@ char gpiDado(void)																// Le um dado da GPI (entrada).
 	gpio_set_level(___gpiLD,0);						                            // Desativa o pino da carga do dado.
 	return (entrada);								                            // Retorna com o valor
 }
+/* Bloco Fim: GPIOs */
 
 void hex2Asc(char vlrHex, char *vlrAsc)											// Converte decimal em hexa(ASCII)
 {
@@ -317,6 +389,7 @@ void hex2Asc(char vlrHex, char *vlrAsc)											// Converte decimal em hexa(AS
 	vlrAsc[3] = uni;															// Salva valor para retorno.
 }
 
+/* Bloco Inicio: Expansao */
 void expIniciar(void)															// Inicializa o hardware da expansao.
 {
 	gpio_reset_pin(___expCK);													// Limpa configuracoes anteriores.
@@ -371,7 +444,9 @@ void expGPO(char vlrOut)														// Envia um dado para saida da expansao.
 	gpio_set_level(___expLD,1); 							                    // Gera um pulso para carregar o dado.
 	gpio_set_level(___expLD,0);                                                 //
 }
+/* Bloco Fim: Expansao */
 
+/* Bloco Inicio: Modulo Motor de Passo */
 void mpIniciar(void)															// Inicializa o hardware do modulo DRV8825/A4988.
 {
 	gpio_reset_pin(___mpDIR);													// Limpa configuracoes anteriores.
@@ -407,6 +482,7 @@ void mpAngulo(unsigned int ang, unsigned char sent, unsigned char passo)		// Aci
 	}
 	gpio_set_level(___mpSLP,0);													// Entra no modo 'Sleep' (desliga as saidas).
 }
+/* Bloco Fim: Modulo Motor de Passo */
 
 void int2Asc(unsigned int valor, char *buffer, char digi) 						// Converte INT em ASCII: Valor(Bin), Matriz, Numero de digitos (0 a 5). 
 {
@@ -457,6 +533,7 @@ void adcIniciar(void)															// Inicializa o hardware do modulo conversor
 	*/
 }
 
+/* Bloco Inicio: DHT 11/22 */
 unsigned char   timeOut=0;														// Flag que indica o limite do tempo.
 unsigned int    valor16bRh, valor16bTp;											// Var. global para salvar os valores do DHT 11/22.
 
@@ -584,11 +661,786 @@ void dhtxx(unsigned char modelo,unsigned int *umidade,unsigned int *temperatura)
 		*temperatura = valor16bTp;												// Salva o valor da temperatura.
 	}
 }
+/* Bloco Fim: DHT 11/22 */
+
+/* Bloco Inicio: WiFi */
+static int s_active_interfaces = 0;
+static xSemaphoreHandle s_semph_get_ip_addrs;
+static esp_netif_t *s_example_esp_netif = NULL;
+// static int s_active_interfaces = 0;
+#define MAX_IP6_ADDRS_PER_NETIF (5)
+#define NR_OF_IP_ADDRESSES_TO_WAIT_FOR (s_active_interfaces)
+
+/* Tipos de enderecos IPv6 a serem exibidos em eventos IPv6. */
+static esp_ip6_addr_t s_ipv6_addr;
+
+static const char *s_ipv6_addr_types[] = 
+{
+    "ESP_IP6_ADDR_IS_UNKNOWN",
+    "ESP_IP6_ADDR_IS_GLOBAL",
+    "ESP_IP6_ADDR_IS_LINK_LOCAL",
+    "ESP_IP6_ADDR_IS_SITE_LOCAL",
+    "ESP_IP6_ADDR_IS_UNIQUE_LOCAL",
+    "ESP_IP6_ADDR_IS_IPV4_MAPPED_IPV6"
+};
+
+static void on_wifi_connect(void *esp_netif, esp_event_base_t event_base,
+                            int32_t event_id, void *event_data)
+{
+    esp_netif_create_ip6_linklocal(esp_netif);
+}
+
+static void on_wifi_disconnect(void *arg, esp_event_base_t event_base,
+                               int32_t event_id, void *event_data)
+{
+    ESP_LOGI(TAG, "Wi-Fi disconectado, tentando reconectar...");
+    esp_err_t err = esp_wifi_connect();
+    if (err == ESP_ERR_WIFI_NOT_STARTED) 
+    {
+        return;
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+/**
+ * @brief Checks the netif description if it contains specified prefix.
+ * All netifs created withing common connect component are prefixed with the module TAG,
+ * so it returns true if the specified netif is owned by this module
+ */
+static bool is_our_netif(const char *prefix, esp_netif_t *netif)
+{
+    return strncmp(prefix, esp_netif_get_desc(netif), strlen(prefix) - 1) == 0;
+}
+
+static esp_ip4_addr_t s_ip_addr;
+
+static void on_got_ip(void *arg, esp_event_base_t event_base,
+                      int32_t event_id, void *event_data)
+{
+    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+    if (!is_our_netif(TAG, event->esp_netif)) {
+        ESP_LOGW(TAG, "Got IPv4 from another interface \"%s\": ignored", esp_netif_get_desc(event->esp_netif));
+        return;
+    }
+    ESP_LOGI(TAG, "Got IPv4 event: Interface \"%s\" address: " IPSTR, esp_netif_get_desc(event->esp_netif), IP2STR(&event->ip_info.ip));
+    memcpy(&s_ip_addr, &event->ip_info.ip, sizeof(s_ip_addr));
+    xSemaphoreGive(s_semph_get_ip_addrs);
+}
+
+static void on_got_ipv6(void *arg, esp_event_base_t event_base,
+                        int32_t event_id, void *event_data)
+{
+    ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
+    if (!is_our_netif(TAG, event->esp_netif)) {
+        ESP_LOGW(TAG, "Got IPv6 from another netif: ignored");
+        return;
+    }
+    esp_ip6_addr_type_t ipv6_type = esp_netif_ip6_get_addr_type(&event->ip6_info.ip);
+    ESP_LOGI(TAG, "Got IPv6 event: Interface \"%s\" address: " IPV6STR ", type: %s", esp_netif_get_desc(event->esp_netif),
+             IPV62STR(event->ip6_info.ip), s_ipv6_addr_types[ipv6_type]);
+    if (ipv6_type == EXAMPLE_CONNECT_PREFERRED_IPV6_TYPE) {
+        memcpy(&s_ipv6_addr, &event->ip6_info.ip, sizeof(s_ipv6_addr));
+        xSemaphoreGive(s_semph_get_ip_addrs);
+    }
+}
+
+esp_netif_t *get_example_netif(void)
+{
+    return s_example_esp_netif;
+}
+
+esp_netif_t *get_example_netif_from_desc(const char *desc)
+{
+    esp_netif_t *netif = NULL;
+    char *expected_desc;
+    asprintf(&expected_desc, "%s: %s", TAG, desc);
+    while ((netif = esp_netif_next(netif)) != NULL) {
+        if (strcmp(esp_netif_get_desc(netif), expected_desc) == 0) {
+            free(expected_desc);
+            return netif;
+        }
+    }
+    free(expected_desc);
+    return netif;
+}
+
+static esp_netif_t *wifi_start(void)
+{
+    char *desc;
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
+    // Prefixe a descricao da interface com o TAG do modulo.
+    // Atencao: a interface desc eh usada em testes para capturar detalhes reais da conexao (IP, gw, mask).
+    asprintf(&desc, "%s: %s", TAG, esp_netif_config.if_desc);
+    esp_netif_config.if_desc = desc;
+    esp_netif_config.route_prio = 128;
+    esp_netif_t *netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
+    free(desc);
+    esp_wifi_set_default_wifi_sta_handlers();
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &on_wifi_disconnect, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_got_ip, NULL));
+#ifdef CONFIG_EXAMPLE_CONNECT_IPV6
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &on_wifi_connect, netif));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &on_got_ipv6, NULL));
+#endif
+
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = CONFIG_EXAMPLE_WIFI_SSID,
+            .password = CONFIG_EXAMPLE_WIFI_PASSWORD,
+            .scan_method = EXAMPLE_WIFI_SCAN_METHOD,
+            .sort_method = EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD,
+            .threshold.rssi = CONFIG_EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD,
+            .threshold.authmode = EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD,
+        },
+    };
+    ESP_LOGI(TAG, "Connecting to %s...", wifi_config.sta.ssid);
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_connect();
+    return netif;
+}
+
+static void wifi_stop(void)
+{
+    esp_netif_t *wifi_netif = get_example_netif_from_desc("sta");
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &on_wifi_disconnect));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_got_ip));
+#ifdef CONFIG_EXAMPLE_CONNECT_IPV6
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_GOT_IP6, &on_got_ipv6));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &on_wifi_connect));
+#endif
+    esp_err_t err = esp_wifi_stop();
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        return;
+    }
+    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(esp_wifi_deinit());
+    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(wifi_netif));
+    esp_netif_destroy(wifi_netif);
+    s_example_esp_netif = NULL;
+}
+
+/* Configura conexao, Wi-Fi e/ou Ethernet. */
+static void start(void)
+{
+
+#ifdef CONFIG_EXAMPLE_CONNECT_WIFI
+    s_example_esp_netif = wifi_start();
+    s_active_interfaces++;
+#endif
+
+#ifdef CONFIG_EXAMPLE_CONNECT_ETHERNET
+    s_example_esp_netif = eth_start();
+    s_active_interfaces++;
+#endif
+
+// Gera erro: 'warning: extra tokens at end of...'
+// #ifdef CONFIG_EXAMPLE_CONNECT_WIFI && CONFIG_EXAMPLE_CONNECT_ETHERNET
+// #ifdef defined (CONFIG_EXAMPLE_CONNECT_WIFI) && defined (CONFIG_EXAMPLE_CONNECT_ETHERNET)
+//     /* if both intefaces at once, clear out to indicate that multiple netifs are active */
+//     s_example_esp_netif = NULL;
+// #endif
+
+#ifdef EXAMPLE_DO_CONNECT
+    /* Cria um 'semaphore' se ao menos uma interface estiver ativa. */
+    s_semph_get_ip_addrs = xSemaphoreCreateCounting(NR_OF_IP_ADDRESSES_TO_WAIT_FOR, 0);
+#endif
+
+}
+
+static void stop(void)
+{
+#ifdef CONFIG_EXAMPLE_CONNECT_WIFI
+    wifi_stop();
+    s_active_interfaces--;
+#endif
+
+#ifdef CONFIG_EXAMPLE_CONNECT_ETHERNET
+    eth_stop();
+    s_active_interfaces--;
+#endif
+}
+
+esp_err_t example_connect(void)
+{
+#ifdef EXAMPLE_DO_CONNECT
+    if (s_semph_get_ip_addrs != NULL) 
+	{
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
+    start();
+    ESP_ERROR_CHECK(esp_register_shutdown_handler(&stop));
+    ESP_LOGI(TAG, "Aguardando IP(s).");
+    for (int i = 0; i < NR_OF_IP_ADDRESSES_TO_WAIT_FOR; ++i) 
+	{
+        xSemaphoreTake(s_semph_get_ip_addrs, portMAX_DELAY);
+    }
+    // Iteragir sobre interfaces ativas e imprima IPs de "nossos" netifs.
+    esp_netif_t *netif = NULL;
+    esp_netif_ip_info_t ip;
+    for (int i = 0; i < esp_netif_get_nr_of_ifs(); ++i) 
+	{
+        netif = esp_netif_next(netif);
+        if (is_our_netif(TAG, netif)) 
+		{
+            ESP_LOGI(TAG, "Conectado ao %s", esp_netif_get_desc(netif));
+            ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip));
+
+            ESP_LOGI(TAG, "- Endereco IPv4: " IPSTR, IP2STR(&ip.ip));
+#ifdef CONFIG_EXAMPLE_CONNECT_IPV6
+            esp_ip6_addr_t ip6[MAX_IP6_ADDRS_PER_NETIF];
+            int ip6_addrs = esp_netif_get_all_ip6(netif, ip6);
+            for (int j = 0; j < ip6_addrs; ++j) {
+                esp_ip6_addr_type_t ipv6_type = esp_netif_ip6_get_addr_type(&(ip6[j]));
+                ESP_LOGI(TAG, "- IPv6 address: " IPV6STR ", type: %s", IPV62STR(ip6[j]), s_ipv6_addr_types[ipv6_type]);
+            }
+#endif
+
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t example_disconnect(void)
+{
+    if (s_semph_get_ip_addrs == NULL) 
+	{
+        return ESP_ERR_INVALID_STATE;
+    }
+    vSemaphoreDelete(s_semph_get_ip_addrs);
+    s_semph_get_ip_addrs = NULL;
+    stop();
+    ESP_ERROR_CHECK(esp_unregister_shutdown_handler(&stop));
+    return ESP_OK;
+}
+
+#ifdef CONFIG_EXAMPLE_BASIC_AUTH
+
+typedef struct 
+{
+    char    *username;
+    char    *password;
+} basic_auth_info_t;
+
+#define HTTPD_401      "Erro: 401 Nao Autorizado"           					// Resposta HTTP 401.
+
+static char *http_auth_basic(const char *username, const char *password)
+{
+    int out;
+    char *user_info = NULL;
+    char *digest = NULL;
+    size_t n = 0;
+    asprintf(&user_info, "%s:%s", username, password);
+    if (!user_info) {
+        ESP_LOGE(TAG, "Nao ha memoria suficiente para informacoes do usuario.");
+        return NULL;
+    }
+    esp_crypto_base64_encode(NULL, 0, &n, (const unsigned char *)user_info, strlen(user_info));
+
+    /* 6: O comprimento da string "Basic".
+     * n: Numero de bytes para um formato de codificacao base64.
+     * 1: Numero de bytes reservado que sera usado para preencher com zero.
+    */
+    digest = calloc(1, 6 + n + 1);
+    if (digest) {
+        strcpy(digest, "Basic ");
+        esp_crypto_base64_encode((unsigned char *)digest + 6, n, (size_t *)&out, (const unsigned char *)user_info, strlen(user_info));
+    }
+    free(user_info);
+    return digest;
+}
+
+/* Um manipulador HTTP GET para autorizacao. */
+static esp_err_t basic_auth_get_handler(httpd_req_t *req)
+{
+    char *buf = NULL;
+    size_t buf_len = 0;
+    basic_auth_info_t *basic_auth_info = req->user_ctx;
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Autorizacao") + 1;
+    if (buf_len > 1) 
+	{
+        buf = calloc(1, buf_len);
+        if (!buf) 
+		{
+            ESP_LOGE(TAG, "Sem memoria suficiente para autorizacao basica");
+            return ESP_ERR_NO_MEM;
+        }
+
+        if (httpd_req_get_hdr_value_str(req, "Authorization", buf, buf_len) == ESP_OK) 
+		{
+            ESP_LOGI(TAG, "Cabecalho encontrado => Autorizacao: %s", buf);
+        } else 
+		{
+            ESP_LOGE(TAG, "Nenhum valor de autenticacao recebido.");
+        }
+
+        char *auth_credentials = http_auth_basic(basic_auth_info->username, basic_auth_info->password);
+        if (!auth_credentials) 
+		{
+            ESP_LOGE(TAG, "Nao ha memoria suficiente para credenciais de autorizacao basica.");
+            free(buf);
+            return ESP_ERR_NO_MEM;
+        }
+
+        if (strncmp(auth_credentials, buf, buf_len)) 
+		{
+            ESP_LOGE(TAG, "Nao autenticado.");
+            httpd_resp_set_status(req, HTTPD_401);
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_set_hdr(req, "Connection", "keep-alive");
+            httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
+            httpd_resp_send(req, NULL, 0);
+        } else 
+		{
+            ESP_LOGI(TAG, "Autenticado!");
+            char *basic_auth_resp = NULL;
+            httpd_resp_set_status(req, HTTPD_200);
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_set_hdr(req, "Connection", "keep-alive");
+            asprintf(&basic_auth_resp, "{\"authenticated\": true,\"user\": \"%s\"}", basic_auth_info->username);
+            if (!basic_auth_resp) 
+			{
+                ESP_LOGE(TAG, "Sem memoria suficiente para resposta de autorizacao basica.");
+                free(auth_credentials);
+                free(buf);
+                return ESP_ERR_NO_MEM;
+            }
+            httpd_resp_send(req, basic_auth_resp, strlen(basic_auth_resp));
+            free(basic_auth_resp);
+        }
+        free(auth_credentials);
+        free(buf);
+    } else 
+	{
+        ESP_LOGE(TAG, "Nenhum cabecalho de autenticacao recebido.");
+        httpd_resp_set_status(req, HTTPD_401);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Connection", "keep-alive");
+        httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
+        httpd_resp_send(req, NULL, 0);
+    }
+
+    return ESP_OK;
+}
+
+static httpd_uri_t basic_auth = 
+{
+    .uri       = "/basic_auth",
+    .method    = HTTP_GET,
+    .handler   = basic_auth_get_handler,
+};
+
+static void httpd_register_basic_auth(httpd_handle_t server)
+{
+    basic_auth_info_t *basic_auth_info = calloc(1, sizeof(basic_auth_info_t));
+    if (basic_auth_info) 
+	{
+        basic_auth_info->username = CONFIG_EXAMPLE_BASIC_AUTH_USERNAME;
+        basic_auth_info->password = CONFIG_EXAMPLE_BASIC_AUTH_PASSWORD;
+
+        basic_auth.user_ctx = basic_auth_info;
+        httpd_register_uri_handler(server, &basic_auth);
+    }
+}
+#endif
+
+/* Um manipulador(handler) para o HTTP GET */
+static esp_err_t geral_get_handler(httpd_req_t *req)
+{
+    char *buf;
+    size_t buf_len;
+
+    /* Obtem o comprimento da string do valor do cabecalho e aloca memoria para comprimento + 1, byte extra para terminacao nula. */
+    buf_len = httpd_req_get_hdr_value_len(req, "Host") + 1;
+    if (buf_len > 1) 
+    {
+        buf = malloc(buf_len);
+        /* Copia a string de valor de terminacao nula no buffer */
+        if (httpd_req_get_hdr_value_str(req, "Host", buf, buf_len) == ESP_OK) 
+        {
+            ESP_LOGI(TAG, "Found header => Host: %s", buf);
+        }
+        free(buf);
+    }
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-2") + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-2", buf, buf_len) == ESP_OK) 
+		{
+            ESP_LOGI(TAG, "Found header => Test-Header-2: %s", buf);
+        }
+        free(buf);
+    }
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-1") + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-1", buf, buf_len) == ESP_OK) 
+		{
+            ESP_LOGI(TAG, "Found header => Test-Header-1: %s", buf);
+        }
+        free(buf);
+    }
+
+    /* Le o comprimento da string de consulta do URL e aloca memoria para comprimento + 1, byte extra para terminacao nula. */
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            ESP_LOGI(TAG, "Found URL query => %s", buf);
+            char param[32];
+            /* Obtem o valor da chave esperada da string de consulta. */
+            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
+            }
+            if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
+            }
+            if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
+            }
+        }
+        free(buf);
+    }
+
+    /* Define alguns cabecalhos personalizados. */
+    httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
+    httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
+
+    /* Envia a resposta com cabecalhos personalizados e corpo definido como a string passada no contexto do usuario. */
+    const char* resp_str = (const char*) req->user_ctx;
+    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+
+    /* Depois de enviar a resposta HTTP, os antigos cabecalhos de solicitacao HTTP sao perdidos. 
+	   Verificar se os cabecalhos de solicitacao HTTP podem ser lidos agora. */
+    if (httpd_req_get_hdr_value_len(req, "Host") == 0) 
+    {
+        ESP_LOGI(TAG, "Request headers lost");
+    }
+    return ESP_OK;
+}
+
+static esp_err_t gpio_get_handler(httpd_req_t *req)
+{
+    char *buf;
+    size_t buf_len;
+
+    /* Obtem o comprimento da string do valor do cabecalho e aloca memoria para comprimento + 1, byte extra para terminacao nula. */
+    buf_len = httpd_req_get_hdr_value_len(req, "Host") + 1;
+    if (buf_len > 1) 
+    {
+        buf = malloc(buf_len);
+        /* Copia a string de valor de terminacao nula no buffer */
+        if (httpd_req_get_hdr_value_str(req, "Host", buf, buf_len) == ESP_OK) 
+        {
+            ESP_LOGI(TAG, "Found header => Host: %s", buf);
+        }
+        free(buf);
+    }
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-2") + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-2", buf, buf_len) == ESP_OK) 
+		{
+            ESP_LOGI(TAG, "Found header => Test-Header-2: %s", buf);
+        }
+        free(buf);
+    }
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-1") + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-1", buf, buf_len) == ESP_OK) 
+		{
+            ESP_LOGI(TAG, "Found header => Test-Header-1: %s", buf);
+        }
+        free(buf);
+    }
+
+    /* Le o comprimento da string de consulta do URL e aloca memoria para comprimento + 1, byte extra para terminacao nula. */
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) 
+        {
+            ESP_LOGI(TAG, "Found URL query => %s", buf);
+            char param[32];
+            /* Obtem o valor da chave esperada da string de consulta. */
+            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
+            }
+            if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
+            }
+            if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
+            }
+        }
+        free(buf);
+    }
+
+    /* Define alguns cabecalhos personalizados. */
+    httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
+    httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
+
+    /* Envia a resposta com cabecalhos personalizados e corpo definido como a string passada no contexto do usuario. */
+    const char* resp_str = (const char*) req->user_ctx;
+    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+
+    /* Depois de enviar a resposta HTTP, os antigos cabecalhos de solicitacao HTTP sao perdidos. 
+	   Verificar se os cabecalhos de solicitacao HTTP podem ser lidos agora. */
+    if (httpd_req_get_hdr_value_len(req, "Host") == 0) 
+    {
+        ESP_LOGI(TAG, "Request headers lost");
+    }
+    return ESP_OK;
+}
+
+static const httpd_uri_t hello = 
+{
+    .uri       = "/hello",
+    .method    = HTTP_GET,
+    .handler   = geral_get_handler,
+    /* String de resposta no contexto do usuario para demonstrar seu uso. */
+    .user_ctx  = "Hello World!"
+	// .user_ctx  = NULL															// Usar se nao houver retorno.
+};
+
+static const httpd_uri_t gpio = 
+{
+    .uri       = "/gpio",
+    .method    = HTTP_GET,
+    .handler   = gpio_get_handler,
+    .user_ctx  = "GPIO"
+};
+
+/* Um manipulador(handler) para o HTTP POST */
+static esp_err_t echo_post_handler(httpd_req_t *req)
+{
+    char buf[100];
+    int ret, remaining = req->content_len;
+
+    while (remaining > 0) 
+    {
+        if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)))) <= 0) // Ler os dados da solicitacao.
+        {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT) 
+            {
+                continue;  														// Tente receber novamente se o tempo limite for atingido.
+            }
+            return ESP_FAIL;
+        }
+        httpd_resp_send_chunk(req, buf, ret);									// Envie de volta os mesmos dados.
+        remaining -= ret;
+
+        /* Log dos dados recebidos */
+        ESP_LOGI(TAG, "========== Dados Recebidos =========");
+        ESP_LOGI(TAG, "%.*s", ret, buf);
+        ESP_LOGI(TAG, "====================================");
+    }
+    httpd_resp_send_chunk(req, NULL, 0);										// Fim da resposta.
+    return ESP_OK;
+}
+
+static const httpd_uri_t echo = 
+{
+    .uri       = "/echo",
+    .method    = HTTP_POST,
+    .handler   = echo_post_handler,
+    .user_ctx  = NULL
+};
+
+esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
+{
+    if (strcmp("/hello", req->uri) == 0) 
+    {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/hello URI nao esta disponivel.");
+        /* Retorne ESP_OK para manter o socket subjacente aberto. */
+        return ESP_OK;
+    } else if (strcmp("/echo", req->uri) == 0) 
+    {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/echo URI nao esta disponivel.");
+        /* Retorne ESP_FAIL para fechar o socket subjacente. */
+        return ESP_FAIL;
+    }
+    /* Para qualquer outro URI, envie 404 e feche o socket. */
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Erro 404. Nao foi encontrado.");
+    return ESP_FAIL;
+}
+
+static esp_err_t ctrl_put_handler(httpd_req_t *req)
+{
+    char buf;
+    int ret;
+
+    if ((ret = httpd_req_recv(req, &buf, 1)) <= 0) 
+    {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) httpd_resp_send_408(req);
+        return ESP_FAIL;
+    }
+
+    if (buf == '0') 
+    {
+        /* Manipuladores de URI podem ser desregistrados usando a string de URI. */
+        ESP_LOGI(TAG, "Removendo URIs: /hello, /echo.");
+        httpd_unregister_uri(req->handle, "/hello");
+        httpd_unregister_uri(req->handle, "/echo");
+
+        // httpd_unregister_uri(req->handle, "/alex");
+        // httpd_unregister_uri(req->handle, "/fred");
+        // httpd_unregister_uri(req->handle, "/henrique");
+        // httpd_unregister_uri(req->handle, "/jose");
+        // httpd_unregister_uri(req->handle, "/leandro");
+        // httpd_unregister_uri(req->handle, "/terrao");
+
+        /* Registrar o manipulador de erros personalizado. */
+        httpd_register_err_handler(req->handle, HTTPD_404_NOT_FOUND, http_404_error_handler);
+    }
+    else 
+    {
+        ESP_LOGI(TAG, "Registrando URIs: /hello, /echo.");
+        httpd_register_uri_handler(req->handle, &hello);
+        httpd_register_uri_handler(req->handle, &echo);
+
+        // httpd_register_uri_handler(req->handle, &alex);
+        // httpd_register_uri_handler(req->handle, &fred);
+        // httpd_register_uri_handler(req->handle, &henrique);
+        // httpd_register_uri_handler(req->handle, &jose);
+        // httpd_register_uri_handler(req->handle, &leandro);
+        // httpd_register_uri_handler(req->handle, &terrao);
+
+        /* Cancelar o registro do manipulador de erros personalizado. */
+        httpd_register_err_handler(req->handle, HTTPD_404_NOT_FOUND, NULL);
+    }
+
+    /* Responde com o corpo vazio. */
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t out_put_handler(httpd_req_t *req)
+{
+    char buf;
+    int ret;
+
+    if ((ret = httpd_req_recv(req, &buf, 1)) <= 0) 
+    {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) httpd_resp_send_408(req);
+        return ESP_FAIL;
+    }
+
+    if (buf > 0x29 && buf < 0x40)                                               // Entre '0' e '9'
+    {
+        ESP_LOGI(TAG, "Valor enviado. ");
+        gpoDado(buf);													        // Envia ao GPO.
+    }
+
+    /* Responde com o corpo vazio. */
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static const httpd_uri_t ctrl = 
+{
+    .uri       = "/ctrl",
+    .method    = HTTP_PUT,
+    .handler   = ctrl_put_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t saida = 
+{
+    .uri       = "/saida",
+    .method    = HTTP_PUT,
+    .handler   = out_put_handler,
+    .user_ctx  = NULL
+};
+
+static httpd_handle_t start_webserver(void)
+{
+    httpd_handle_t server = NULL;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.lru_purge_enable = true;
+    config.max_uri_handlers = 10; // Editado: numero de ate 10.
+
+    // Inicia o Server httpd.
+    ESP_LOGI(TAG, "Iniciando o Server na porta: '%d'", config.server_port);
+    if (httpd_start(&server, &config) == ESP_OK) 
+    {
+        // Configura o manipulador de URIs.
+        ESP_LOGI(TAG, "Registrando as URIs.");
+        httpd_register_uri_handler(server, &hello);
+        httpd_register_uri_handler(server, &echo);
+        httpd_register_uri_handler(server, &ctrl);
+        httpd_register_uri_handler(server, &saida);
+        httpd_register_uri_handler(server, &gpio);
+
+        #ifdef CONFIG_EXAMPLE_BASIC_AUTH
+        	httpd_register_basic_auth(server);
+        #endif
+        return server;
+    }
+    ESP_LOGI(TAG, "Falha ao iniciar o Server!");
+    return NULL;
+}
+
+static esp_err_t stop_webserver(httpd_handle_t server)
+{
+    return httpd_stop(server);  // Parar o httpd server
+}
+
+static void disconnect_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+    httpd_handle_t* server = (httpd_handle_t*) arg;
+    if (*server) 
+    {
+        ESP_LOGI(TAG, "Parando WebServer");
+        if (stop_webserver(*server) == ESP_OK) *server = NULL;
+        else ESP_LOGE(TAG, "Falha ao parar http server");
+    }
+}
+
+static void connect_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+    httpd_handle_t* server = (httpd_handle_t*) arg;
+    if (*server == NULL) 
+    {
+        ESP_LOGI(TAG, "Iniciando WebServer");
+        *server = start_webserver();
+    }
+}
+/* Bloco Fim: WiFi */
 
 void app_main(void)																// App principal.
 {
 	char *ourTaskName = pcTaskGetName("HardTest");								// Nome da TASK.
 	ESP_LOGI(ourTaskName,"App Iniciado.");										// Imprime Info.
+
+	/* Bloco do Wifi */
+	static httpd_handle_t server = NULL;
+    ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+	ESP_ERROR_CHECK(example_connect());
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
+    server = start_webserver();													// Iniciar o servidor pela primeira vez.
 
 	vTaskDelay(50); 									                        // 500ms. Aguarda LCD estabilizar.
     unsigned char vlrTecla = 0;													// Var. temp. da tecla.
@@ -705,5 +1557,3 @@ void app_main(void)																// App principal.
 		vTaskDelay(10); 														// Aguarda 100ms.
     }
 }
-
-
