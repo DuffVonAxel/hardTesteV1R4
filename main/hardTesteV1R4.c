@@ -39,6 +39,7 @@
 #define ___gpiCK	12                       			                        // Seleciona o pino de 'clock' para o registrador.
 #define ___gpiDT	13                       			                        // Seleciona o pino de 'data in' para o registrador.
 #define ___gpiLD	14                       			                        // Seleciona o pino de 'load' para o registrador.
+// char valorEntrada = 0, valorSaida = 0;										    // Var. global entrada e saida.
 
 /* Saida */
 #define ___gpoCK	12                       			                        // Seleciona o pino de 'clock' para o registrador.
@@ -61,6 +62,9 @@
 
 /* WiFi */
 static const char *TAG = "Wifi_Fred";
+int vlrQuery1, vlrQuery2, vlrQuery3;
+char vlrAscIn[]={"0000"};
+
 // Configuracao de conexao
 #define CONFIG_EXAMPLE_GPIO_RANGE_MIN				0
 #define CONFIG_EXAMPLE_GPIO_RANGE_MAX				33
@@ -76,7 +80,7 @@ static const char *TAG = "Wifi_Fred";
 #define CONFIG_EXAMPLE_BASIC_AUTH_PASSWORD			"ESPWebServer"				// Formulario de acesso: Senha
 #define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_ALL_CHANNEL_SCAN       // 
 // #define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_FAST_SCAN
-#define EXAMPLE_DO_CONNECT
+#define EXAMPLE_DO_CONNECT                                                      // 
 // Limites de busca
 #define CONFIG_EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD		-127
 // #define CONFIG_EXAMPLE_WIFI_AUTH_OPEN											// 
@@ -671,7 +675,7 @@ static esp_netif_t *s_example_esp_netif = NULL;
 #define MAX_IP6_ADDRS_PER_NETIF (5)
 #define NR_OF_IP_ADDRESSES_TO_WAIT_FOR (s_active_interfaces)
 
-htmlPage01[] = {"  "};
+// htmlPage01[] = {"  "};
 
 /* Tipos de enderecos IPv6 a serem exibidos em eventos IPv6. */
 static esp_ip6_addr_t s_ipv6_addr;
@@ -686,14 +690,12 @@ static const char *s_ipv6_addr_types[] =
     "ESP_IP6_ADDR_IS_IPV4_MAPPED_IPV6"
 };
 
-static void on_wifi_connect(void *esp_netif, esp_event_base_t event_base,
-                            int32_t event_id, void *event_data)
+static void on_wifi_connect(void *esp_netif, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     esp_netif_create_ip6_linklocal(esp_netif);
 }
 
-static void on_wifi_disconnect(void *arg, esp_event_base_t event_base,
-                               int32_t event_id, void *event_data)
+static void on_wifi_disconnect(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ESP_LOGI(TAG, "Wi-Fi disconectado, tentando reconectar...");
     esp_err_t err = esp_wifi_connect();
@@ -705,9 +707,9 @@ static void on_wifi_disconnect(void *arg, esp_event_base_t event_base,
 }
 
 /**
- * @brief Checks the netif description if it contains specified prefix.
- * All netifs created withing common connect component are prefixed with the module TAG,
- * so it returns true if the specified netif is owned by this module
+ * @brief Verifica se a descricao 'netif' contem o prefixo especificado.
+ * Todos os 'netifs' criados dentro do componente de conexao comum sao prefixados com o modulo TAG, 
+ * entao ele retorna 'true' se o 'netif' especificado for de propriedade deste modulo.
  */
 static bool is_our_netif(const char *prefix, esp_netif_t *netif)
 {
@@ -716,8 +718,7 @@ static bool is_our_netif(const char *prefix, esp_netif_t *netif)
 
 static esp_ip4_addr_t s_ip_addr;
 
-static void on_got_ip(void *arg, esp_event_base_t event_base,
-                      int32_t event_id, void *event_data)
+static void on_got_ip(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     if (!is_our_netif(TAG, event->esp_netif)) {
@@ -729,8 +730,7 @@ static void on_got_ip(void *arg, esp_event_base_t event_base,
     xSemaphoreGive(s_semph_get_ip_addrs);
 }
 
-static void on_got_ipv6(void *arg, esp_event_base_t event_base,
-                        int32_t event_id, void *event_data)
+static void on_got_ipv6(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
     if (!is_our_netif(TAG, event->esp_netif)) {
@@ -1180,10 +1180,18 @@ static esp_err_t gpio_get_handler(httpd_req_t *req)
         {
             ESP_LOGI(TAG, "Found URL query => %s", buf);
             char param[32];
+            char vlrSaida[4];
             /* Obtem o valor da chave esperada da string de consulta. */
+            if (httpd_query_key_value(buf, "saida", vlrSaida, sizeof(vlrSaida)) == ESP_OK) 
+			{
+                ESP_LOGI(TAG, "Parametro Saida= %s", vlrSaida);
+                vlrQuery1=atol(vlrSaida);
+            }
             if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) 
 			{
                 ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
+                // valorSaida=param;
+                // vlrQuery1=param;
             }
             if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
 			{
@@ -1229,7 +1237,7 @@ static const httpd_uri_t gpio =
     .uri       = "/gpio",
     .method    = HTTP_GET,
     .handler   = gpio_get_handler,
-    .user_ctx  = "GPIO"
+    .user_ctx  = vlrAscIn
 };
 
 /* Um manipulador(handler) para o HTTP POST */
@@ -1481,15 +1489,19 @@ void app_main(void)																// App principal.
 
 		/* Teste do GPI */
 		valorEntrada = gpiDado();												// Le a GPI.
+        int2Asc(valorEntrada,vlrAscIn,4);
 		hex2Asc(valorEntrada,vlrGpi);											// Converte o valor.
 		lcdString(vlrGpi,2,1);													// Envia ao LCD.
 		/* */
 		
 		/* Teste do GPO */
-		valorSaida = valorEntrada;												// Equate.
+		// valorSaida = valorEntrada;												// Equate.
+        valorSaida =(char) vlrQuery1;
 		gpoDado(valorSaida);													// Envia ao GPO.
+        // gpoDado(vlrQuery1);													    // Envia ao GPO.
 		hex2Asc(valorSaida,vlrGpo);												// Converte o valor.
 		lcdString(vlrGpo,2,7);													// Envia ao LCD.
+        // lcdString(vlrQuery1,1,1);													// Envia ao LCD.
 		/* */
 
 		/* Teste da Expansao */
