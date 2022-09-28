@@ -1178,17 +1178,17 @@ static esp_err_t gpio_get_handler(httpd_req_t *req)
             ESP_LOGI(TAG, "Found URL query => %s", buf);
             char param[32];
             char vlrSaida[4];
+            // unsigned int vlrMP;
             /* Obtem o valor da chave esperada da string de consulta. */
             if (httpd_query_key_value(buf, "saida", vlrSaida, sizeof(vlrSaida)) == ESP_OK) 
 			{
                 ESP_LOGI(TAG, "Parametro Saida= %s", vlrSaida);
                 vlrQuery1=atol(vlrSaida);
             }
-            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) 
+            if (httpd_query_key_value(buf, "ang", param, sizeof(param)) == ESP_OK) 
 			{
-                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
-                // valorSaida=param;
-                // vlrQuery1=param;
+                ESP_LOGI(TAG, "Angulo= %s", param);
+                mpAngulo(atol(param),0,1);													// X graus a Dir. 1:1
             }
             if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
 			{
@@ -1218,6 +1218,24 @@ static esp_err_t gpio_get_handler(httpd_req_t *req)
     }
     return ESP_OK;
 }
+
+//             if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) 
+// 			{
+//                 ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
+//                 // valorSaida=param;
+//                 // vlrQuery1=param;
+//             }
+//             if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
+// 			{
+//                 ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
+//             }
+//             if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) 
+// 			{
+//                 ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
+//             }
+//         }
+//         free(buf);
+//     }
 
 static const httpd_uri_t hello = 
 {
@@ -1397,6 +1415,7 @@ static httpd_handle_t start_webserver(void)
         httpd_register_uri_handler(server, &ctrl);
         httpd_register_uri_handler(server, &saida);
         httpd_register_uri_handler(server, &gpio);
+        // httpd_register_uri_handler(server, &mpasso);
 
         #ifdef CONFIG_EXAMPLE_BASIC_AUTH
         	httpd_register_basic_auth(server);
