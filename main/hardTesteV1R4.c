@@ -61,9 +61,9 @@
 #define ___dhtPin	23															// Seleciona o pino de acesso ao DHT 11/22.
 
 /* WiFi */
-static const char *TAG = "Wifi_Fred";
-int vlrQuery1, vlrQuery2, vlrQuery3;
-char vlrAscIn[]={"0000"};
+static const char *TAG = "Wifi_Fred";                                           // Identificacao da 'Task'.
+int vlrQuery1, vlrQuery2, vlrQuery3;                                            // Var. para 'Query' do metodo 'GET'.
+char vlrAscIn[]={"0000"};                                                       // Var. da entrada para retorno HTML.
 
 // Configuracao de conexao
 #define CONFIG_EXAMPLE_GPIO_RANGE_MIN				0
@@ -671,11 +671,8 @@ void dhtxx(unsigned char modelo,unsigned int *umidade,unsigned int *temperatura)
 static int s_active_interfaces = 0;
 static xSemaphoreHandle s_semph_get_ip_addrs;
 static esp_netif_t *s_example_esp_netif = NULL;
-// static int s_active_interfaces = 0;
 #define MAX_IP6_ADDRS_PER_NETIF (5)
 #define NR_OF_IP_ADDRESSES_TO_WAIT_FOR (s_active_interfaces)
-
-// htmlPage01[] = {"  "};
 
 /* Tipos de enderecos IPv6 a serem exibidos em eventos IPv6. */
 static esp_ip6_addr_t s_ipv6_addr;
