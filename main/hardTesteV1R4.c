@@ -9,7 +9,6 @@
 #include <esp_event.h>          												// => esp_event_base_t
 #include <nvs_flash.h>          												// => nvs_flash_init
 #include <sys/param.h>          												// => MIN()
-#include <esp_event.h>          												// => esp_event_base_t
 #include "esp_tls_crypto.h"														// => esp_crypto_base64_encode
 #include "esp_netif.h"                                                          // 
 #include "esp_wifi.h"                                                           // 
@@ -1188,7 +1187,8 @@ static esp_err_t gpio_get_handler(httpd_req_t *req)
             if (httpd_query_key_value(buf, "ang", param, sizeof(param)) == ESP_OK) 
 			{
                 ESP_LOGI(TAG, "Angulo= %s", param);
-                mpAngulo(atol(param),0,1);													// X graus a Dir. 1:1
+                if(atol(param)<0) mpAngulo(abs(atol(param)),0,1);	// Valor neg. esq. (antihorario)
+                if(atol(param)>0) mpAngulo(atol(param),1,1);		// X graus a Dir. 1:1
             }
             if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) 
 			{
@@ -1531,14 +1531,14 @@ void app_main(void)																// App principal.
 		/* Teste do Modulo DRV8825/A4988 */
 		if(vlrTecla=='1')														// Se a tecla for acionada...
 		{
-			vlrMp[2]='0';														// Direita.
+			vlrMp[2]='0';														// Esquerda.
 			lcdString(vlrMp,2,13);												// Envia ao LCD.
 			mpAngulo(90,0,1);													// 90 graus a Dir. 1:1
 		}
 		
 		if(vlrTecla=='3')														// Se a tecla for acionada...
 		{
-			vlrMp[2]='1';														// Esquerda.
+			vlrMp[2]='1';														// Direita.
 			lcdString(vlrMp,2,13);												// Envia ao LCD.
 			mpAngulo(90,1,1);													// 90 graus a Esq. 1:1
 		}
@@ -1560,7 +1560,7 @@ void app_main(void)																// App principal.
 		}
 		/* */
 
-		/* Teste do DHT11/DHT22*/
+		/* Teste do DHT11 */
 		if(vlrTecla=='C')														// Se a tecla for acionada...
 		{
 			dhtxxIniciar();														// Dispara a leitura no DHT 11.
@@ -1572,6 +1572,7 @@ void app_main(void)																// App principal.
 			vTaskDelay(100); 									                // Aguarda 1000ms.
 		}
 
+        /* Teste do DHT22 */
 		if(vlrTecla=='D')														// Se a tecla for acionada...
 		{
 			dhtxxIniciar();														// Dispara a leitura no DHT 22.
