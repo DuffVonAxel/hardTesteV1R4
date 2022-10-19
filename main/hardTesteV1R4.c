@@ -1554,8 +1554,8 @@ void app_main(void)																// App principal.
 			vlrAn1 = adc1_get_raw(ADC1_CHANNEL_3);								// Le o pino GPIO39.
 			int2Asc(vlrAn0,vlrAsc0,4); 											// Converte o valor 'int' em ASCII.
 			int2Asc(vlrAn1,vlrAsc1,4); 											// Converte o valor 'int' em ASCII.
-			lcdString(vlrAsc0,1,1); 											// Envia o valor convertido ao LCD.
-			lcdString(vlrAsc1,1,7); 											// Envia o valor convertido ao LCD.
+			lcdString(vlrAsc1,1,1); 											// Envia o valor 'X' convertido ao LCD.
+			lcdString(vlrAsc0,1,7); 											// Envia o valor 'Y' convertido ao LCD.
 			vTaskDelay(100); 									                // Aguarda 1000ms.
 		}
 		/* */
