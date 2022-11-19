@@ -75,7 +75,7 @@ char vlrAscIn[]={"0000"};                                                       
 #define CONFIG_EXAMPLE_CONNECT_IPV6												// Sim
 #define CONFIG_EXAMPLE_CONNECT_IPV6_PREF_LOCAL_LINK								// Sim
 #define CONFIG_EXAMPLE_BASIC_AUTH												// Sim
-#define CONFIG_EXAMPLE_BASIC_AUTH_USERNAME			"ESP32"						// Formulario de acesso: Ususario
+#define CONFIG_EXAMPLE_BASIC_AUTH_USERNAME			"ESP32"						// Formulario de acesso: Usuario
 #define CONFIG_EXAMPLE_BASIC_AUTH_PASSWORD			"ESPWebServer"				// Formulario de acesso: Senha
 #define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_ALL_CHANNEL_SCAN       // 
 // #define EXAMPLE_WIFI_SCAN_METHOD                    WIFI_FAST_SCAN
